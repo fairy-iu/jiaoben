@@ -1,0 +1,137 @@
+// ==UserScript==
+// @name         XHR劫持返回内容例子
+// @namespace    http://tampermonkey.net/
+// @version      0.1
+// @description  try to take over the world!
+// @author       You
+// @include        *://ols.v.zzu.edu.cn/*
+// @grant       unsafeWindow
+// @grant        GM_xmlhttpRequest
+// @connect      *
+
+// ==/UserScript==
+var oldxhr=unsafeWindow.XMLHttpRequest
+
+function newobj(){}
+let res =[];
+unsafeWindow.XMLHttpRequest=function(){
+    let tagetobk=new newobj();
+    tagetobk.oldxhr=new oldxhr();
+    let handle={
+        get: function(target, prop, receiver) {
+            if(prop==='oldxhr'){
+                return Reflect.get(target,prop);
+            }
+            if(typeof Reflect.get(target.oldxhr,prop)==='function')
+            {
+                if(Reflect.get(target.oldxhr,prop+'proxy')===undefined)
+                {
+                    target.oldxhr[prop+'proxy']=(...funcargs)=> {
+                        let result=target.oldxhr[prop].call(target.oldxhr,...funcargs)
+                        if(!target.oldxhr.allData){
+                            target.oldxhr.allData={}
+                        }
+                        target.oldxhr.allData[prop]=funcargs
+                        //console.log('函数劫持获取结果',result)
+                        return result;
+                    }
+
+
+                }
+                return Reflect.get(target.oldxhr,prop+'proxy')
+            }
+            if(prop.indexOf('response')!==-1)
+            {
+                // console.log(target.oldxhr)
+                if(target.oldxhr.responseURL==="http://ols.v.zzu.edu.cn/s/appCourseSubject/queryChaptersTest"){
+                    target.oldxhr.allData[target.oldxhr.responseURL]=JSON.parse(target.oldxhr.response).data[0].list;
+                    res= target.oldxhr.allData[target.oldxhr.responseURL];
+                   
+                        getAnwer(res)
+                   
+                  //  console.log(target.oldxhr.allData[target.oldxhr.responseURL])
+                }else if(target.oldxhr.responseURL==="http://ols.v.zzu.edu.cn/s/appCourseSubject/checkUserSubjectAnswer2"){
+                    let checkResult=JSON.parse(target.oldxhr.response).data[0].result;
+                    let checkSend=target.oldxhr.allData.send[0].split("&")[0].split("=")[1].split("~~")
+                    for(let i=0;i<checkResult.length;i++){
+                        let item=checkResult[i]
+                        if(item==="对"){
+                            let answerIndex=checkSend[i].split("~")
+                            console.log(answerIndex)
+                            if(res[i].answer.length===answerIndex.length){
+                                console.log(res[i].answer,answerIndex)
+                            continue
+                            }
+                            res[i].answer=[]
+                            answerIndex.forEach(item=>{
+                                res[i].answer.push(res[i].options[Number(item)])
+                            })
+                            update(res[i])
+                        }
+                    }
+
+                }else if(target.oldxhr.responseURL==="http://ols.v.zzu.edu.cn/s/appCourseSubject/queryCurErrorSubject"){
+                 let arr=JSON.parse(target.oldxhr.response).data;
+                    arr.forEach(item=>{
+                        item.answer=item.answerList
+                     update(item)
+                    })
+                }
+                // console.log(target.oldxhr.allData)
+                return Reflect.get(target.oldxhr,prop)
+            }
+            return Reflect.get(target.oldxhr,prop);
+        },
+        set(target, prop, value) {
+            return Reflect.set(target.oldxhr, prop, value);
+        },
+        has(target, key) {
+
+            return Reflect.has(target.oldxhr,key);
+        }
+    }
+
+    let ret = new Proxy(tagetobk, handle);
+
+    return ret;
+}
+
+function getAnwer(data){
+    GM_xmlhttpRequest({
+        url:"http://119.29.15.252:3001/api/question/getAll",
+        headers: { "Content-Type": "application/json" },
+        method:"POST",
+        data:JSON.stringify(data),
+        onload:(r)=>{
+            let arr=JSON.parse(r.response).data
+            res.forEach(item=>{
+                for(const value of arr){
+                if(item.content===value.content){
+                item.answer=value.answer||[];
+                    break
+                }
+                }
+            })
+            console.log(arr)
+            console.log(data)
+        },
+    })
+
+}
+function update(data){
+    GM_xmlhttpRequest({
+        url:"http://119.29.15.252:3001/api/question/update",
+        headers: { "Content-Type": "application/json" },
+        method:"PUT",
+        data:JSON.stringify(data),
+        onload:(r)=>{
+            console.log(JSON.parse(r.response))
+           // console.log(res)
+        },
+    })
+
+}
+
+
+
+
